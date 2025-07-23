@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: storage
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/storage
+    username: postgres
+    password: Vini13lagoa$
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    config-url: /v3/api-docs/swagger-config
+
+info:
+  title: Storage API
+  description: API para gerenciamento de estoque e movimentações 3D
+  version: 1.0.0
+  contact:
+    name: Vinicius Eduardo Da Silva
+    email: viniciuseduardo0702@hotmail.com
+
+logging:
+  level:
+    com.wester.storage: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
