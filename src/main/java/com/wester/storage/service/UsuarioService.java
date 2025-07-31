@@ -1,10 +1,13 @@
 package com.wester.storage.service;
 
+import com.wester.storage.config.JwtSecurityConfig;
+import com.wester.storage.dto.LoginDTO;
+import com.wester.storage.dto.UsuarioResponseDTO;
 import com.wester.storage.model.Usuario;
 import com.wester.storage.repository.UsuarioRepository;
-// Import a password encoder, e.g., from Spring Security
-// import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +20,15 @@ public class UsuarioService {
     @Autowired
     private UsuarioRepository usuarioRepository;
 
-    // Inject PasswordEncoder (configure a Bean for it elsewhere, e.g., BCryptPasswordEncoder)
-    // @Autowired
-    // private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtSecurityConfig jwtSecurityConfig;
+
+    private final PasswordEncoder passwordEncoder;
+
+    public UsuarioService(PasswordEncoder passwordEncoder) {
+        this.passwordEncoder = passwordEncoder;
+    }
 
     @Transactional(readOnly = true)
     public List<Usuario> listarTodosUsuarios() {
@@ -36,35 +45,83 @@ public class UsuarioService {
         return usuarioRepository.findByLogin(login);
     }
 
+
+    public UsuarioResponseDTO autenticar(LoginDTO dto) {
+        PasswordEncoder encoder = new BCryptPasswordEncoder();
+        System.out.println(encoder.encode("admin"));
+        System.out.println("🔐 Iniciando autenticação para login: " + dto.getLogin());
+
+        return buscarPorLogin(dto.getLogin())
+                .map(usuario -> {
+                    System.out.println("👤 Usuário encontrado: " + usuario.getLogin());
+                    boolean senhaValida = passwordEncoder.matches(dto.getSenha(), usuario.getSenhaHash());
+
+                    if (!senhaValida) {
+                        return new UsuarioResponseDTO(
+                                null,
+                                dto.getLogin(),
+                                "Usuário ou senha inválido",
+                                "INVALIDO",
+                                null
+                        );
+                    }
+
+                    String token = jwtSecurityConfig.generateToken(usuario.getLogin());
+                    System.out.println("✅ Autenticação bem-sucedida. Token gerado.");
+
+                    return new UsuarioResponseDTO(
+                            usuario.getId(),
+                            usuario.getLogin(),
+                            usuario.getNome(),
+                            usuario.getPerfil(),
+                            token
+                    );
+                })
+                .orElseGet(() -> {
+                    System.out.println("❌ Usuário não encontrado: " + dto.getLogin());
+                    return new UsuarioResponseDTO(
+                            null,
+                            dto.getLogin(),
+                            "Usuário ou senha inválido",
+                            "INVALIDO",
+                            null
+                    );
+                });
+    }
+
+
     @Transactional
     public Usuario salvarUsuario(Usuario usuario) {
-        // Validate profile
-        if (!isValidProfile(usuario.getPerfil())) {
-             throw new IllegalArgumentException("Perfil inválido: " + usuario.getPerfil() + ". Use 'LEITURA' ou 'ADMINISTRADOR'.");
+        // Atribuir perfil padrão caso não tenha sido informado
+        if (usuario.getPerfil() == null || usuario.getPerfil().isBlank()) {
+            usuario.setPerfil("LEITURA");
         }
-        // Check if login already exists for new users
+
+        // Validar perfil
+        if (!isValidProfile(usuario.getPerfil())) {
+            throw new IllegalArgumentException("Perfil inválido: " + usuario.getPerfil() + ". Use 'LEITURA' ou 'ADMINISTRADOR'.");
+        }
+
+        // Verificar duplicação de login
         if (usuario.getId() == null && buscarPorLogin(usuario.getLogin()).isPresent()) {
             throw new IllegalArgumentException("Login já existe: " + usuario.getLogin());
         }
-        // Encode password before saving - IMPORTANT: Implement password encoding!
-        // String encodedPassword = passwordEncoder.encode(usuario.getSenhaHash()); // Assuming raw password is sent initially
-        // usuario.setSenhaHash(encodedPassword);
-        // For now, saving the hash as is, assuming it's already hashed by the controller/DTO layer or for simplicity
-        // In a real app, ALWAYS hash passwords securely.
+
         return usuarioRepository.save(usuario);
     }
+
 
     @Transactional
     public Usuario atualizarUsuario(Long id, Usuario usuarioAtualizado) {
         return usuarioRepository.findById(id).map(usuarioExistente -> {
             // Validate profile
             if (!isValidProfile(usuarioAtualizado.getPerfil())) {
-                 throw new IllegalArgumentException("Perfil inválido: " + usuarioAtualizado.getPerfil() + ". Use 'LEITURA' ou 'ADMINISTRADOR'.");
+                throw new IllegalArgumentException("Perfil inválido: " + usuarioAtualizado.getPerfil() + ". Use 'LEITURA' ou 'ADMINISTRADOR'.");
             }
             // Check if the updated login conflicts with another existing user
             Optional<Usuario> userWithSameLogin = buscarPorLogin(usuarioAtualizado.getLogin());
             if (!usuarioExistente.getLogin().equals(usuarioAtualizado.getLogin()) &&
-                userWithSameLogin.isPresent() && !userWithSameLogin.get().getId().equals(id)) {
+                    userWithSameLogin.isPresent() && !userWithSameLogin.get().getId().equals(id)) {
                 throw new IllegalArgumentException("Login já existe: " + usuarioAtualizado.getLogin());
             }
 
@@ -85,8 +142,8 @@ public class UsuarioService {
 
     @Transactional
     public void deletarUsuario(Long id) {
-         if (!usuarioRepository.existsById(id)) {
-             throw new RuntimeException("Usuário não encontrado com id: " + id);
+        if (!usuarioRepository.existsById(id)) {
+            throw new RuntimeException("Usuário não encontrado com id: " + id);
         }
         // Add checks if user has dependencies (e.g., created history records) if needed
         usuarioRepository.deleteById(id);
